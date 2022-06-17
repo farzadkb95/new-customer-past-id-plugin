@@ -1,0 +1,47 @@
+nction wc_update_new_customer_past_orders( $customer_id ) {
+	$linked          = 0;
+	$complete        = 0;
+	$customer        = get_user_by( 'id', absint( $customer_id ) );
+	$customer_orders = wc_get_orders(
+		array(
+			'limit'    => -1,
+			'customer' => array( array( 0, $customer->user_email ) ),
+			'return'   => 'ids',
+		)
+	);
+
+	if ( ! empty( $customer_orders ) ) {
+		foreach ( $customer_orders as $order_id ) {
+			$order = wc_get_order( $order_id );
+			if ( ! $order ) {
+				continue;
+			}
+
+			$order->set_customer_id( $customer->ID );
+			$order->save();
+
+			if ( $order->has_downloadable_item() ) {
+				$data_store = WC_Data_Store::load( 'customer-download' );
+				$data_store->delete_by_order_id( $order->get_id() );
+				wc_downloadable_product_permissions( $order->get_id(), true );
+			}
+
+			do_action( 'woocommerce_update_new_customer_past_order', $order_id, $customer );
+
+			if ( get_post_status( $order_id ) === 'wc-completed' ) {
+				$complete++;
+			}
+
+			$linked++;
+		}
+	}
+
+	if ( $complete ) {
+		update_user_meta( $customer_id, 'paying_customer', 1 );
+		update_user_meta( $customer_id, '_order_count', '' );
+		update_user_meta( $customer_id, '_money_spent', '' );
+		delete_user_meta( $customer_id, '_last_order' );
+	}
+
+	return $linked;
+}
